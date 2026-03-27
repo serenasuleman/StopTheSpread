@@ -28,14 +28,14 @@ R_motor = stepper.StepperMotor(coils_2[0], coils_2[1], coils_2[2], coils_2[3], m
 
 
 # roof parameters
-width = 60             #width of roof in centimetres
-length = 70            #height of roof in centimetres
-island_width = 9.5       #width of island in centimetres
-island_length = 15      #length of island in centimetres (i.e., in y-direction)
-y_freq = 3              #number of y-postitions, set by us
+width = 20             #width of roof in centimetres
+length = 15            #height of roof in centimetres
+island_width = 8       #width of island in centimetres
+island_length = 9      #length of island in centimetres (i.e., in y-direction)
+y_freq = 2              #number of y-postitions, set by us
 
 y_step = (length-island_length) / (y_freq - 1)
-xpos_arr = [j * island_width for j in range(width//island_width)]
+xpos_arr = [j * island_width for j in range(int(width//island_width))]
 #generates arr of x_pos based on island & roof widths
 ypos_arr = [i * y_step for i in range(y_freq)]
 #generates arr of y-pos based on lengths & chosen freq
@@ -44,35 +44,26 @@ ypos_arr = [i * y_step for i in range(y_freq)]
 DELAY = 0.01
 spoolDiameter = 5        #diameter of spool in centimetres
 spoolCircle = False
-spoolCircum = math.pi * spoolDiameter if spoolCircle else 6    #yeah this shouldn't be like this
+spoolCircum = math.pi * spoolDiameter if spoolCircle else 4    #yeah this shouldn't be like this
 
 # define functions
 
-def moveTo(xpos, ypos):
+def moveMotors(LS, RS):
     #function to move both motors
     #currently JUST SPOOL, will incorporate plate motor later
-    #takes in desired x and y coordinates
-    #MAKE SURE THAT motors are physically set up such that a forward step increases length
-    #or whatever
-
-    global L_length_prev, L_length_cur, R_length_prev, R_length_cur
-    
-    #step 0: argh
-    L_length_cur = math.sqrt(xpos**2 + ypos**2)
-    R_length_cur = math.sqrt((width-xpos-island_width)**2 + ypos**2)
-
-    dLS = L_length_cur - L_length_prev
-    dRS = R_length_cur - R_length_prev
+    #takes in DELTA length desired for each spool, positive or negative
+    #motors are physically set up such that a forward step increases length
+    # backward step makes length go away
 
     #step 1: figure out how much to move based on length
-    L_angle = 360 * dLS / spoolCircum
+    L_angle = 360 * LS / spoolCircum
     L_steps = round(abs(1/1.8 * L_angle))
-    R_angle = 360 * dRS / spoolCircum
+    R_angle = 360 * RS / spoolCircum
     R_steps = round(abs(1/1.8 * R_angle))
 
     #step 2: which direction?
-    L_direction = stepper.FORWARD if dLS >= 0 else stepper.BACKWARD
-    R_direction = stepper.FORWARD if dRS >= 0 else stepper.BACKWARD
+    L_direction = stepper.FORWARD if LS <= 0 else stepper.BACKWARD
+    R_direction = stepper.FORWARD if RS >= 0 else stepper.BACKWARD
 
     #step 3: do the moving
 
@@ -94,12 +85,14 @@ def moveTo(xpos, ypos):
     L_motor.release()
     R_motor.release()
 
-    #step 4: fix it
-    L_length_prev = L_length_cur
-    R_length_prev = R_length_cur
-
     return
 
+def goHome():
+    global L_length_prev, L_length_cur, R_length_prev, R_length_cur
+    moveMotors((-1*L_length_prev), ((width-island_width) - R_length_prev))
+    L_length_prev, L_length_cur  = 0, 0
+    R_length_prev, R_length_cur = (width - island_width), (width - island_width)
+    return
 
 # here we go!!
 # assume we start at top left, i.e. x = 0, y = 0, L_length = 0, R_length = (width - island)
@@ -110,24 +103,50 @@ R_length_prev = (width - island_width)  #length of R wire at home base
 
 for xpos in xpos_arr: #x-coordinate, remains the same through y loop, starts at 0
     for ypos in ypos_arr:
-        moveTo(xpos, ypos)
+        L_length_cur = math.sqrt(xpos**2 + ypos**2)
+        R_length_cur = math.sqrt((width-xpos-island_width)**2 + ypos**2)
+        dLS = L_length_cur - L_length_prev
+        dRS = R_length_cur - R_length_prev
+        moveMotors(dLS, dRS)
+        L_length_prev = L_length_cur
+        R_length_prev = R_length_cur
     #so now we're done the y-loop
     #x-coord = xpos; y-coord = length - island_length
     #we want to make it go back up, and I think the exact same way we made it go down
     for ypos_up in reversed(ypos_arr):
-        moveTo(xpos, ypos_up)
+        L_length_cur = math.sqrt(xpos**2 + ypos_up**2)
+        R_length_cur = math.sqrt((width-xpos-island_width)**2 + ypos_up**2)
+        dLS = L_length_cur - L_length_prev
+        dRS = R_length_cur - R_length_prev
+        moveMotors(dLS, dRS)
+        L_length_prev = L_length_cur
+        R_length_prev = R_length_cur
     #coordinates are now (xpos, 0)
 
 #okay, so we've done the whole roof--except maybe the rightmost edge. 
-#let's do the rightmost edge, without the thing falling down
+#let's do the rightmost edge, without the thing fallingdown
 xpos = width-island_width #literally as far as we can get
 for ypos in ypos_arr:
-    moveTo(xpos, ypos)
+    L_length_cur = math.sqrt(xpos**2 + ypos**2)
+    R_length_cur = math.sqrt((width-xpos-island_width)**2 + ypos**2)
+    dLS = L_length_cur - L_length_prev
+    dRS = R_length_cur - R_length_prev
+    moveMotors(dLS, dRS)
+    L_length_prev = L_length_cur
+    R_length_prev = R_length_cur
 for ypos_up in reversed(ypos_arr):
-    moveTo(xpos, ypos_up)
+    L_length_cur = math.sqrt(xpos**2 + ypos_up**2)
+    R_length_cur = math.sqrt((width-xpos-island_width)**2 + ypos_up**2)
+    dLS = L_length_cur - L_length_prev
+    dRS = R_length_cur - R_length_prev
+    moveMotors(dLS, dRS)
+    L_length_prev = L_length_cur
+    R_length_prev = R_length_cur
 
 # okay, so now we've cleaned the whole roof! go home.
-moveTo(0,0)
+goHome()
+
+
 
 
 
